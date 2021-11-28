@@ -27,3 +27,4 @@
 .Rbuildignore
 # picture files
 *.JPEG
+*.csv
