@@ -1,0 +1,28 @@
+Package: PseudotimeMethylation
+Title: Perform Pseudotime Analysis DNA Methylation Data with Slingshot
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Kalsuda",
+           family = "Lapborisuth",
+           role = c("aut", "cre"),
+           email = "kalsuda.lapborisuth@gmail.com")
+Description: Pseudotime Analysis workflow using Slingshot for methylation data on GEO repository (one paragraph).
+License: CC0
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Depends: 
+    R (>= 2.10)
+Imports:
+	splitTools,
+	mclust,
+	RColorBrewer,
+	viridis,
+	stats,
+	ggplot2,
+	grDevices,
+	graphics,
+	nlsr
+biocViews:
+  slingshot

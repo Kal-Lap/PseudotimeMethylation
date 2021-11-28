@@ -1,0 +1,285 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r Load library}
+library(PseudotimeMethylation)
+library(stats)
+library(mclust)
+library(splitTools)
+library(graphics)
+library(RColorBrewer)
+library(grDevices)
+library(viridis)
+library(stats)
+```
+
+```{r}
+set.seed(444)
+```
+
+```{r load data: Done}
+data(blood_meth_data)
+data(blood_meta_data)
+data(brain_meth_data)
+data(brain_meta_data)
+
+```
+
+
+```{r set parameters}
+#repeat_data <- FALSE
+#tissue_type <- "Blood"
+tissue_type <- "Brain"
+specify_train_experiments <- FALSE
+train_test_val_split_by_labels <- FALSE
+bad_exps_labels <- c('GSE140800','GSE87640')
+
+if(train_test_val_split_by_labels == TRUE){
+  train_l = "train"
+  val_l = "val"
+  test_l = "test"
+  
+}else if (specify_train_experiments == TRUE){
+  train_experiments <- c('GSE42861','GSE128064','GSE97362','GSE87571')
+  test_experiments <-c('GSE140800', 'GSE73103', 
+                             'GSE107459', 'GSE125105',
+                             'GSE87640','GSE51057',
+                             'GSE51032','GSE69138', 
+                             'GSE111629', 'GSE128235', 
+                             'GSE121633', 'GSE61496', 
+                             'GSE59065', 'GSE156994', 
+                             'GSE111165', 'GSE43976', 
+                             'GSE87648', 'GSE105123', 
+                             'GSE74548', 'GSE124366', 
+                             'GSE142512', 'GSE105123', 
+                             'GSE74548')
+  val_experiments <-c()
+} else{
+  train_size <- 0.2
+  test_size <- 0.7
+  val_size <- 0.1
+}
+
+```
+
+
+```{r preprocess}
+if (tissue_type == "Blood"){
+  data_list <- check_valid_data(blood_meth_data, blood_meta_data)
+  data_list <- remove_bad_exp(data_list, bad_exps_labels)
+  choose_young_clust <- TRUE
+}
+if (tissue_type == "Brain"){
+  data_list <- check_valid_data(brain_meth_data, brain_meta_data)
+  choose_young_clust <- TRUE
+}
+```
+
+
+```{r train test split, stratified by age}
+
+if (train_test_val_split_by_labels == TRUE){
+  splitted_data <- labels_train_test_val_split (data_list,
+                                                train_label = train_l,
+                                                val_label = val_l,
+                                                test_label = test_l)
+  
+}else if (specify_train_experiments == TRUE){
+  splitted_data <- exp_train_val_test_split(data_list,
+                                            train_exp = train_experiments,
+                                            val_exp = val_experiments,
+                                            test_exp = test_experiments)
+
+} else{
+  splitted_data <- ratio_train_val_test_split(data_list,
+                                              train_size,
+                                              test_size,
+                                              val_size = val_size)
+}  
+```
+
+```{r Select sites by pcc/variance threshold}
+# selected_pcc_ind = select_site_pcc(splitted_data$train_meth,
+#                                    splitted_data$train_meta,
+#                                    pcc_thresh = 0.5)
+# # selected_var_ind = select_site_pcc(splitted_data$train_meth, 
+# #                                    splitted_data$train_meta, 
+# #                                    var_thresh = 0.001)
+# 
+# splitted_data[["train_meth"]] <- splitted_data$train_meth[selected_pcc_ind,]
+# splitted_data[["test_meth"]] <- splitted_data$test_meth[selected_pcc_ind,]
+
+```
+
+```{r compare distribution of train-test set}
+hist(splitted_data$train_meta$chrono_age, 
+     main = "Age distribution of train set")
+hist(splitted_data$val_meta$chrono_age, 
+     main = "Age distribution of val set")
+
+hist(splitted_data$test_meta$chrono_age, 
+     main = "Age distribution of test set")
+
+plot(density(splitted_data$train_meth), 
+     main = "Density plot of train vs test set")
+lines(density(splitted_data$test_meth))
+
+```
+
+
+```{r fit pseudotime to train data}
+model_list <- fit_pseudotime(splitted_data$train_meth,
+                             splitted_data$train_meta,
+                             tissue_type = tissue_type,
+                             model_label = "train_obs",
+                             choose_young_clust = choose_young_clust,
+                             plot = TRUE,
+                             plot_trend=FALSE)
+train_pstime <- get_single_pseudotime(model_list[["pstime_model"]])
+predict_train_pstime <- predict_pseudotime(splitted_data$train_meth,
+                                     splitted_data$train_meta,
+                                     model_list,
+                                     tissue_type = tissue_type,
+                                     model_label = "train_pred",
+                                     plot = TRUE,
+                                     plot_trend=FALSE)
+print("train RMSE, R2")
+print(rmse(predict_train_pstime,train_pstime))
+print(r2(predict_train_pstime,train_pstime))
+
+
+```
+
+```{r evaluate with validation set}
+val_model_list <- fit_pseudotime(splitted_data$val_meth,
+                             splitted_data$val_meta,
+                             tissue_type = tissue_type,
+                             model_label = "val_obs",
+                             choose_young_clust = choose_young_clust,
+                             plot = TRUE,
+                             plot_trend=FALSE)
+val_pstime <- get_single_pseudotime(val_model_list[["pstime_model"]])
+
+predict_val_pstime <- predict_pseudotime(splitted_data$val_meth,
+                                     splitted_data$val_meta,
+                                     model_list,
+                                     tissue_type = tissue_type,
+                                     model_label = "val_pred",
+                                     plot = TRUE,
+                                     plot_trend=FALSE)
+print("validation RMSE, R2")
+print(rmse(predict_val_pstime,val_pstime))
+print(r2(predict_val_pstime,val_pstime))
+
+```
+
+
+```{r predict pseudotime on test set}
+predict_pstime <- predict_pseudotime(splitted_data$test_meth,
+                                     splitted_data$test_meta,
+                                     model_list,
+                                     tissue_type = tissue_type,
+                                     model_label = "test",
+                                     plot = TRUE,
+                                     plot_trend=TRUE)
+```
+
+
+
+```{r fit chronological age vs pseudotime functional form}
+df <- data.frame(x = splitted_data$test_meta$chrono_age+0.5,
+                 y = predict_pstime)
+quadratic <- nlsr::wrapnlsr(y ~ a0 + b1*x + b2*x^2, data=df,
+                        start = c(a0=15,b1=3,b2=0.1))
+logarithmic <- nlsr::wrapnlsr(y ~ a0+b1*log(x), data=df,
+                        start = c(a0=50,b1=5))
+sqroot <- nlsr::wrapnlsr(y ~ a0 + b1*x^(0.5),data=df,
+                     start = c(a0=-20,b1=20))
+singleExp <- nlsr::wrapnlsr(y ~ a0*(1-exp(-b1*x)), data=df,
+                        start=c(a0=25,b1=0.24))
+doubleExp <- nlsr::wrapnlsr(y ~ a0*((1+b1)-exp(-c1*x)-b1*exp(-c2*x)), data = df,
+                      start=c(a0=9.79,b1=2.0,c1=0.025,c2=0.412))
+fit_list <- list("exp" = singleExp, 
+                 "doubleExp" = doubleExp,
+                 "quad" = quadratic, 
+                 "log" = logarithmic,
+                 "sqrt" = sqroot)
+
+
+for (i in c(1:length(fit_list))){
+  plot_scatter(x = df$x,
+               y = df$y,
+               title = "Pseudotime VS Chronological Age", 
+               #group = splitted_data$test_meta$exp_labels,
+               trend_model = fit_list[[i]],
+               func_form = names(fit_list)[[i]],
+               tissue_type = tissue_type, 
+               model_label = "test",
+               xlab = "Chronological Age (yrs)",
+               ylab = "Pseudotime", 
+               #grouplab = "group", 
+               filename = paste0("chronoage_",names(fit_list)[[i]]),
+               width = 2600, 
+               height = 1500)
+}
+
+```
+
+
+```{r fit metrics of functional forms}
+fit_metrics <- function(y,x,model) {
+    coef <- paste(names(stats::coef(model)),round(stats::coef(model), digits = 3),sep=' : ',collapse=" , ")
+    RMSE<- round(rmse(stats::predict(model, newdata = data.frame(x = x)), y), digits = 5)
+    MAE <- round(mae(stats::predict(model, newdata = data.frame(x = x)), y),digits = 5)
+    Rsq <- round(r2(stats::predict(model, newdata = data.frame(x = x)), y),digits = 5)
+
+    result <- list(coef,RMSE,MAE,Rsq)
+    return (result)
+}
+
+#get fit metrics
+fit_matrics_list <- vector("list",5)
+for (i in c(1:length(fit_list))){
+  fit_matrics_list [[i]]<- fit_metrics(df$y, 
+                                       df$x,
+                                       fit_list[[i]])
+}
+
+fit_matrics_df <- as.data.frame(do.call(rbind, fit_matrics_list))
+fit_matrics_df <- t(apply(fit_matrics_df, 1, unlist))
+
+fit_matrics_df<-cbind(fit_matrics_df,
+                      stats::AIC(singleExp, doubleExp, quadratic, logarithmic, sqroot,k = 2))
+fit_matrics_df<-cbind(fit_matrics_df,
+                      stats::BIC( singleExp, doubleExp,quadratic, logarithmic, sqroot)[2])
+
+colnames(fit_matrics_df) <- c("coef", "RMSE", "MAE","Rsq","df","AIC","BIC")
+rownames(fit_matrics_df)<-c("singleExp","doubleExp","quadradic","logarithmic","sqroot")
+
+View(fit_matrics_df)
+
+```
+
+
+```{r Pseudotime VS Epigenetic State}
+df <- data.frame(x = splitted_data$test_meta$epigen_age,y = predict_pstime)
+epigen_lm <- lm(y ~ x, data=df)
+
+plot_scatter(x = splitted_data$test_meta$epigen_age,
+             y = predict_pstime,             
+             title = "Pseudotime VS Epigenetic State", 
+             #group = splitted_data$test_meta$exp_labels,
+             trend_model = epigen_lm,
+             func_form = "linear",
+             tissue_type = tissue_type, 
+             model_label = "test",
+             xlab = "Epigenetic State",
+             ylab = "Pseudotime", 
+             #grouplab = "group", 
+             filename = "epigenage",
+             width = 2600, 
+             height = 1500)
+
+stats::cor.test(splitted_data$test_meta$epigen_age,predict_pstime)
+```
