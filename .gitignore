@@ -3,6 +3,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.Renviron
 
 # History files
 .Rapp.history
@@ -25,6 +26,4 @@
 *.knit.md
 .DS_Store
 .Rbuildignore
-# picture files
-*.JPEG
-*.csv
+inst/extdata/
